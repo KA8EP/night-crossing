@@ -1,4 +1,4 @@
-import { type Camera, type Mesh, Raycaster, Vector2, Vector3 } from 'three'
+import { type Box2, type Camera, type Mesh, Raycaster, Vector2, Vector3 } from 'three'
 import type { Soldier } from '../entities/soldier'
 import { formation, route } from './navigation'
 
@@ -10,11 +10,15 @@ export function bindCommands(
   box: HTMLElement,
   onSelection: (count: number) => void,
   onOrder: (point: Vector3) => void,
+  building: () => boolean,
+  onBuild: (point: Vector3 | undefined) => void,
+  obstacles: () => readonly Box2[],
 ) {
   const raycaster = new Raycaster()
   const cursor = new Vector2()
   const projected = new Vector3()
   const hitboxes = soldiers.map(soldier => soldier.hitbox)
+  const orders = new Map<Soldier, { destination: Vector3; lane: number }>()
   let drag: { id: number; start: Vector2 } | undefined
   let selected: Soldier[] = []
   onSelection(0)
@@ -29,6 +33,11 @@ export function bindCommands(
     raycaster.setFromCamera(cursor, camera)
   }
 
+  function ground(point: Vector2) {
+    cast(point)
+    return raycaster.intersectObjects(surfaces, false)[0]?.point
+  }
+
   canvas.addEventListener('pointerdown', event => {
     if (event.button !== 0 || drag) return
     drag = { id: event.pointerId, start: local(event) }
@@ -36,7 +45,7 @@ export function bindCommands(
   })
 
   canvas.addEventListener('pointermove', event => {
-    if (drag?.id !== event.pointerId) return
+    if (drag?.id !== event.pointerId || building()) return
     const end = local(event)
     const { start } = drag
     box.hidden = start.distanceTo(end) < 6
@@ -50,6 +59,11 @@ export function bindCommands(
     if (drag?.id !== event.pointerId || event.button !== 0) return
     const { start } = drag
     const end = local(event)
+    if (building()) {
+      if (start.distanceTo(end) < 6) onBuild(ground(end))
+      clearDrag()
+      return
+    }
     if (start.distanceTo(end) < 6) {
       cast(end)
       const hit = raycaster.intersectObjects(hitboxes, false)[0]
@@ -83,14 +97,31 @@ export function bindCommands(
   canvas.addEventListener('pointerdown', event => {
     if (event.button !== 2 || !selected.length) return
     event.preventDefault()
-    cast(local(event))
-    const hit = raycaster.intersectObjects(surfaces, false)[0]
-    if (!hit) return
-    const destinations = formation(hit.point, selected.length)
+    const point = ground(local(event))
+    if (!point) return
+    const destinations = formation(point, selected.length)
+    if (!destinations.length) return
+    const blocked = obstacles()
     selected.forEach((soldier, index) => {
       const lane = (index - (selected.length - 1) / 2) * 0.56
-      soldier.move(route(soldier.model.position, destinations[index], lane))
+      const destination = destinations[index]
+      const path = route(soldier.model.position, destination, lane, blocked)
+      if (path.length) {
+        orders.set(soldier, { destination, lane })
+        soldier.move(path)
+      }
     })
-    onOrder(hit.point)
+    onOrder(point)
   })
+
+  return {
+    replan() {
+      const blocked = obstacles()
+      for (const [soldier, { destination, lane }] of orders) {
+        if (soldier.model.position.distanceToSquared(destination) > 0.01) {
+          soldier.move(route(soldier.model.position, destination, lane, blocked))
+        }
+      }
+    },
+  }
 }

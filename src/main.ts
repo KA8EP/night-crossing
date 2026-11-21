@@ -6,6 +6,8 @@ import { createCity } from './entities/city'
 import { Soldier } from './entities/soldier'
 import { TacticalCamera } from './systems/camera'
 import { bindCommands } from './systems/commands'
+import { Construction } from './systems/construction'
+import { Evacuation } from './systems/evacuation'
 import { createHud } from './ui/hud'
 import './ui/style.css'
 
@@ -49,6 +51,27 @@ const soldiers = [
   new Soldier(-16, 0.6), new Soldier(-13.6, 0.6),
 ]
 scene.add(...soldiers.map(soldier => soldier.model))
+const construction = new Construction(scene)
+const evacuation = new Evacuation(scene, camera.camera, soldiers.map(soldier => soldier.model))
+let building = false
+let buildMessageTime = 0
+
+function setBuilding(active: boolean, message = '') {
+  building = active
+  buildMessageTime = active ? 0 : 3
+  hud.construction(active, message)
+}
+
+hud.build.addEventListener('click', () => {
+  setBuilding(!building, building ? '' : 'ЛКМ по крыше — поставить баррикаду · Esc — отменить')
+})
+hud.call.addEventListener('click', () => {
+  evacuation.call()
+  hud.evacuation(evacuation.status)
+})
+window.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && building) setBuilding(false)
+})
 
 const markerMaterial = new MeshBasicMaterial({ color: 0x82ffff, transparent: true, depthWrite: false })
 const marker = new Mesh(new RingGeometry(0.48, 0.55, 34), markerMaterial)
@@ -56,23 +79,36 @@ marker.rotation.x = -Math.PI / 2
 marker.visible = false
 scene.add(marker)
 let markerTime = 0
-bindCommands(renderer.domElement, camera.camera, soldiers, city.pickSurfaces, hud.selectionBox, hud.selected, point => {
+const commands = bindCommands(renderer.domElement, camera.camera, soldiers, city.pickSurfaces, hud.selectionBox, hud.selected, point => {
   marker.position.copy(point)
   marker.position.y = 0.075
   marker.visible = true
   markerTime = 0.85
-})
+}, () => building, point => {
+  const units = [
+    ...soldiers.map(soldier => soldier.model.position),
+    ...evacuation.civilians.filter(civilian => !civilian.rescued).map(civilian => civilian.model.position),
+  ]
+  const error = construction.place(point, units)
+  if (error) {
+    hud.construction(true, error + ' · Esc — отменить')
+    return
+  }
+  commands.replan()
+  setBuilding(false, 'Баррикада установлена · Прочность 100 / 100')
+}, () => construction.obstacles)
 
 let previousTime = performance.now()
-let objectiveComplete = false
 renderer.setAnimationLoop(time => {
   const dt = Math.max(0, Math.min((time - previousTime) / 1000, 0.05))
   previousTime = time
   camera.update(dt)
   soldiers.forEach(soldier => soldier.update(dt))
-  if (!objectiveComplete && soldiers.every(({ model: { position } }) => Math.hypot(position.x - 14, position.z) < 4.35)) {
-    objectiveComplete = true
-    hud.arrived()
+  evacuation.update(dt, construction.obstacles)
+  hud.evacuation(evacuation.status)
+  if (buildMessageTime > 0) {
+    buildMessageTime -= dt
+    if (buildMessageTime <= 0) hud.construction(false)
   }
   if (marker.visible) {
     markerTime -= dt

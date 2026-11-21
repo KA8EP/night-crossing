@@ -18,7 +18,7 @@ body { margin: 0; }
   padding: 0 clamp(12px, 3vw, 46px);
 }
 
-.top, .controls { display: flex; align-items: center; }
+.top, .controls, .actions { display: flex; align-items: center; }
 .top { justify-content: space-between; gap: 20px; padding: 17px 0 19px; }
 .overline {
   color: #9ab7c9;
@@ -46,6 +46,7 @@ h1 { margin: 0; font-size: clamp(22px, 3vw, 36px); font-weight: 650; letter-spac
   background: #27334c;
 }
 canvas { display: block; width: 100%; height: 100%; cursor: crosshair; touch-action: none; }
+.viewport.building canvas { cursor: cell; }
 .selection-box { position: absolute; pointer-events: none; border: 1px solid #83f1ff; background: #56e4ff29; }
 .mission {
   position: absolute;
@@ -60,6 +61,24 @@ canvas { display: block; width: 100%; height: 100%; cursor: crosshair; touch-act
   font-weight: 600;
 }
 .mission.complete { border-color: #85efd0; }
+.bottom { padding: 10px 0 0; }
+.actions { gap: 7px 12px; flex-wrap: wrap; font-size: 12px; color: #a5bcc9; }
+.actions button {
+  font: inherit;
+  font-weight: 650;
+  color: #e2eef4;
+  background: #182632;
+  border: 1px solid #496375;
+  border-radius: 3px;
+  min-height: 33px;
+  padding: 4px 13px;
+  cursor: pointer;
+}
+.actions button:hover:not(:disabled) { background: #263b4b; }
+.actions button[aria-pressed="true"] { border-color: #e9b779; background: #443422; color: #ffdfb3; }
+.actions button:disabled { opacity: 0.58; cursor: default; }
+#build-status { color: #efbf85; font-size: 12px; margin-top: 7px; }
+#score { color: #f1c590; margin-left: auto; font-variant-numeric: tabular-nums; }
 .controls { flex-wrap: wrap; gap: 8px 24px; padding: 12px 0; color: #a5bcc9; font-size: 12px; }
 .controls span { display: inline-flex; gap: 6px; align-items: center; white-space: nowrap; }
 kbd {
