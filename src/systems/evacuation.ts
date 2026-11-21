@@ -1,141 +1,166 @@
-import { MathUtils, Vector3, type Box2, type Camera, type Object3D } from 'three'
+import { MathUtils, Vector3, type Object3D } from 'three'
 import { Civilian } from '../entities/civilian'
+import { pads, v } from '../entities/district'
 import { Helicopter } from '../entities/helicopter'
-import { helipad, route, surfaceAt } from './navigation'
+import type { Soldier } from '../entities/soldier'
+import { approach } from './air-support'
+import { surfaceAt, type Navigation, type Travel } from './navigation'
 
-type Flight = 'ready' | 'incoming' | 'hovering' | 'departing' | 'cooldown'
-const duration = { incoming: 4, hovering: 10, departing: 4, cooldown: 12 }
-const hoverPoint = new Vector3(helipad.x, 3.2, helipad.z)
+type Flight = 'ready' | 'incoming' | 'landed' | 'departing' | 'cooldown'
+const duration = { incoming: 5.2, landed: 10, departing: 4.3, cooldown: 12 }
+const civilianSpawns = [v(-15, 0, 0), v(-20, 0, 5), v(11, 0, -5), v(20, 0, 3.2), v(-15, 6, 24), v(14, 9.5, 20)]
 
 export class Evacuation {
-  readonly civilians = [new Civilian(7, -5.8), new Civilian(19.7, -5.8), new Civilian(20.7, 5.2)]
-  private readonly helicopter = new Helicopter()
+  readonly civilians = civilianSpawns.map(p => new Civilian(p.x, p.z, p.y))
+  private readonly helicopter = new Helicopter('rescue')
+  private readonly destinations = new Map<Civilian, Vector3>()
   private readonly edge = new Vector3()
-  private readonly near = new Vector3()
-  private readonly far = new Vector3()
-  private readonly target = new Vector3()
+  private pad = pads[0]
   private flight: Flight = 'ready'
   private elapsed = 0
   private nextFollow = 0
   private saved = 0
 
-  constructor(scene: Object3D, private readonly camera: Camera, private readonly squad: readonly Object3D[]) {
+  constructor(scene: Object3D, private readonly navigation: Navigation, private readonly squad: readonly Soldier[]) {
     scene.add(this.helicopter.model, ...this.civilians.map(civilian => civilian.model))
   }
 
-  call() {
-    if (this.flight !== 'ready' || !this.civilians.some(civilian => civilian.available)) return
-    this.setFlight('incoming')
-    this.setEdge()
+  call(point: Vector3 | undefined) {
+    if (this.flight !== 'ready' || !this.civilians.some(civilian => civilian.available)) return 'Эвакуация сейчас недоступна'
+    const pad = point && pads.find(candidate => candidate.point.distanceTo(point) <= candidate.radius)
+    if (!pad) return 'Щёлкните по площадке H с зелёным дымом'
+    this.pad = pad
+    this.edge.copy(pad.point).add(v(56, 27, -53))
     this.helicopter.model.position.copy(this.edge)
     this.helicopter.model.visible = true
+    this.setFlight('incoming')
   }
 
-  update(dt: number, obstacles: readonly Box2[], escorting = true) {
-    if (escorting) this.follow(dt, obstacles)
-    if (this.flight !== 'ready') {
-      this.elapsed += dt
-      this.helicopter.spin(dt)
-      switch (this.flight) {
-        case 'incoming':
-          this.fly(this.edge, hoverPoint, duration.incoming)
-          if (this.elapsed >= duration.incoming) this.setFlight('hovering')
-          break
-        case 'hovering':
-          this.helicopter.model.position.y = hoverPoint.y + Math.sin(this.elapsed * 2.9) * 0.13
-          if (this.elapsed >= duration.hovering) {
-            for (const civilian of this.civilians) {
-              const { x, z } = civilian.model.position
-              if (civilian.available && Math.hypot(x - helipad.x, z - helipad.z) <= helipad.radius) {
-                civilian.board()
-                this.saved++
-              }
-            }
-            this.setFlight('departing')
-            this.setEdge()
+  update(dt: number, threat: Vector3 | undefined, escorting = true) {
+    if (escorting) this.follow(dt, threat)
+    const model = this.helicopter.model
+    const ground = this.pad.point.clone().add(v(0, 1.14, 0))
+    const above = ground.clone().add(v(0, 15, 0))
+    this.elapsed += dt
+    switch (this.flight) {
+      case 'incoming':
+        if (this.elapsed < 3.3) approach(model, this.edge, above, this.elapsed / 3.3)
+        else {
+          model.position.lerpVectors(above, ground, MathUtils.smoothstep(this.elapsed, 3.3, duration.incoming))
+          model.rotation.x = 0
+        }
+        if (this.elapsed >= duration.incoming) this.setFlight('landed')
+        break
+      case 'landed':
+        for (const civilian of this.civilians) {
+          if (civilian.available && civilian.escort && civilian.model.position.distanceTo(this.pad.point) <= this.pad.radius) {
+            civilian.board()
+            this.saved++
           }
-          break
-        case 'departing':
-          this.fly(hoverPoint, this.edge, duration.departing)
-          if (this.elapsed >= duration.departing) {
-            this.helicopter.model.visible = false
-            this.setFlight('cooldown')
-          }
-          break
-        case 'cooldown':
-          if (this.elapsed >= duration.cooldown) this.setFlight('ready')
-          break
-      }
+        }
+        if (this.elapsed >= duration.landed) this.setFlight('departing')
+        break
+      case 'departing':
+        if (this.elapsed < 1.35) model.position.lerpVectors(ground, above, this.elapsed / 1.35)
+        else approach(model, above, this.edge, (this.elapsed - 1.35) / (duration.departing - 1.35))
+        if (this.elapsed >= duration.departing) {
+          model.visible = false
+          this.setFlight('cooldown')
+        }
+        break
+      case 'cooldown':
+        if (this.elapsed >= duration.cooldown) this.setFlight('ready')
+        break
     }
+    if (model.visible) this.helicopter.spin(dt)
   }
 
   get status() {
     return {
-      flight: this.flight,
+      flight: this.flight, pad: this.pad.name,
       seconds: this.flight === 'ready' ? 0 : Math.ceil(Math.max(0, duration[this.flight] - this.elapsed)),
-      saved: this.saved,
-      total: this.civilians.length,
+      saved: this.saved, total: this.civilians.length,
       available: this.civilians.filter(civilian => civilian.available).length,
     }
   }
 
-  private follow(dt: number, obstacles: readonly Box2[]) {
+  private follow(dt: number, threat: Vector3 | undefined) {
     this.nextFollow -= dt
     for (const [index, civilian] of this.civilians.entries()) {
       if (!civilian.available) continue
-      const position = civilian.model.position
-      if (civilian.escort && !civilian.escort.visible) {
-        civilian.escort = undefined
-        civilian.move([])
-      }
-      if (!civilian.escort) {
-        let nearest = 3.2
-        for (const soldier of this.squad) {
-          if (!soldier.visible) continue
-          const distance = position.distanceTo(soldier.position)
-          if (distance <= nearest) {
-            civilian.escort = soldier
-            nearest = distance
-          }
+      if (this.nextFollow <= 0) {
+        const position = civilian.model.position
+        if (civilian.escort && !civilian.escort.visible) civilian.escort = undefined
+        if (!civilian.escort) {
+          const soldier = this.squad.reduce<Soldier | undefined>((nearest, member) => {
+            if (!member.ready || member.model.position.distanceTo(position) > 4.8) return nearest
+            return !nearest || nearest.model.position.distanceToSquared(position) > member.model.position.distanceToSquared(position) ? member : nearest
+          }, undefined)
+          if (soldier) civilian.escort = soldier.model
         }
-      }
-      if (civilian.escort && this.nextFollow <= 0) {
-        const leader = civilian.escort.position
-        const surface = surfaceAt(leader.x, leader.z)
-        if (surface) {
-          this.target.set(
-            MathUtils.clamp(leader.x + (index - 1) * 0.85, surface.minX + 0.45, surface.maxX - 0.45),
-            0,
-            MathUtils.clamp(leader.z + 1.05, -surface.halfDepth + 0.45, surface.halfDepth - 0.45),
-          )
-          const lane = (index - 1) * 0.55
-          const path = route(position, this.target.clone(), lane, obstacles)
-          civilian.move(path.length ? path : route(position, leader.clone(), lane, obstacles))
+        if (civilian.escort) {
+          const assigned = this.destinations.get(civilian)
+          if (!assigned) {
+            const choices = pads.map(pad => {
+              const point = pad.point.clone().add(v((index % 3 - 1) * 1.2, 0, index % 2 ? 1.55 : -1.25))
+              const path = this.navigation.route(position, point)
+              return { point, path, cost: travelTime(position, path) }
+            }).sort((a, b) => a.cost - b.cost)
+            const choice = choices[0]
+            if (choice.path.length) {
+              this.destinations.set(civilian, choice.point)
+              civilian.move(choice.path)
+            }
+          } else if (position.distanceToSquared(assigned) > 0.01) {
+            civilian.move(this.navigation.route(position, assigned))
+          }
+        } else {
+          this.destinations.delete(civilian)
+          if (threat && position.distanceTo(threat) <= 11) this.panic(civilian, threat)
         }
       }
       civilian.update(dt)
     }
-    if (this.nextFollow <= 0) this.nextFollow = 0.19
+    if (this.nextFollow <= 0) this.nextFollow = 0.65
+  }
+
+  private panic(civilian: Civilian, threat: Vector3) {
+    const position = civilian.model.position
+    const surface = surfaceAt(position)
+    if (!surface) return
+    const away = position.clone().sub(threat).setY(0)
+    if (away.lengthSq() < 0.01) away.x = 1
+    away.normalize()
+    const candidates = [0, 0.72, -0.72, 1.4, -1.4].map(turn =>
+      position.clone().addScaledVector(away.clone().applyAxisAngle(v(0, 1, 0), turn), 5.5))
+      .filter(point => surfaceAt(point) === surface && this.navigation.walkable(point))
+    for (const point of candidates) {
+      const path = this.navigation.route(position, point)
+      if (path.length) {
+        civilian.move(path)
+        return
+      }
+    }
+    // If cornered on a roof, use the nearest exit that increases distance from danger.
+    for (const { from, to, kind } of this.navigation.links) {
+      if (surfaceAt(from) !== surface && surfaceAt(to) !== surface) continue
+      const exit = surfaceAt(from) === surface ? to : from
+      if (exit.distanceTo(threat) <= position.distanceTo(threat) || (kind === 'zip' && exit === from)) continue
+      const path = this.navigation.route(position, exit)
+      if (path.length) {
+        civilian.move(path)
+        return
+      }
+    }
   }
 
   private setFlight(flight: Flight) {
     this.flight = flight
     this.elapsed = 0
   }
+}
 
-  private setEdge() {
-    // Intersect a point just beyond the right side of the camera with the flight altitude.
-    this.near.set(1.45, 0.42, -1).unproject(this.camera)
-    this.far.set(1.45, 0.42, 1).unproject(this.camera)
-    this.edge.copy(this.near).lerp(this.far, (11 - this.near.y) / (this.far.y - this.near.y))
-    if (this.edge.distanceTo(hoverPoint) < 14) this.edge.x += 18
-  }
-
-  private fly(from: Vector3, to: Vector3, seconds: number) {
-    const progress = Math.min(1, this.elapsed / seconds)
-    const model = this.helicopter.model
-    model.position.lerpVectors(from, to, MathUtils.smoothstep(progress, 0, 1))
-    model.rotation.y = Math.atan2(to.x - from.x, to.z - from.z)
-    model.rotation.x = Math.sin(progress * Math.PI) * 0.13
-  }
+function travelTime(start: Vector3, path: Travel[]) {
+  if (!path.length) return Infinity
+  return path.reduce((time, point, i) => time + point.distanceTo(path[i - 1] ?? start) / (point.speed ?? 4.5), 0)
 }
