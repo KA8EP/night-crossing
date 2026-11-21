@@ -8,7 +8,7 @@ const ember = new MeshStandardMaterial({ color: 0xff6644, emissive: 0xff3008, em
 const auraGeometry = new RingGeometry(1.1, 1.22, 32)
 
 export class Pyrokinetic {
-  static readonly maxHealth = 580
+  static readonly maxHealth = 1300
   readonly model = new Group()
   private readonly cape = new Group()
   private readonly aura = new Group()
@@ -17,7 +17,7 @@ export class Pyrokinetic {
   health = Pyrokinetic.maxHealth
 
   constructor() {
-    this.model.position.set(17.3, 0, -2.6)
+    this.model.position.set(22, 0, -1.65)
     this.model.rotation.y = -1
     box(this.model, armor, [1.05, 0.96, 0.58], [0, 1.66, 0])
     box(this.model, ember, [0.24, 0.49, 0.09], [0, 1.71, 0.33])

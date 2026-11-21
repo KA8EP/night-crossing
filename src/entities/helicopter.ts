@@ -11,8 +11,10 @@ export class Helicopter {
   private readonly mainRotor = new Group()
   private readonly tailRotor = new Group()
 
-  constructor() {
-    const cabin = new Mesh(new CylinderGeometry(1, 0.84, 3.5, 8), hull)
+  constructor(kind: 'transport' | 'gunship' | 'rescue' = 'transport') {
+    const paint = hull.clone()
+    paint.color.setHex(kind === 'rescue' ? 0x80958e : kind === 'gunship' ? 0x3a566b : 0x596e65)
+    const cabin = new Mesh(new CylinderGeometry(1, 0.84, 3.5, 8), paint)
     cabin.rotation.x = Math.PI / 2
     cabin.scale.set(1.1, 1, 0.86)
     cabin.castShadow = true
@@ -36,6 +38,17 @@ export class Helicopter {
       box(this.tailRotor, dark, [0.058, 0.12, 1.35], [0, 0, 0], false).rotation.x = angle
     }
     this.model.add(this.mainRotor, this.tailRotor)
+    if (kind === 'rescue') {
+      const rescue = new MeshBasicMaterial({ color: 0x8bf9bf })
+      for (const side of [-1, 1]) {
+        box(this.model, rescue, [0.06, 0.14, 0.65], [side * 1.02, 0.16, -0.62], false)
+        box(this.model, rescue, [0.06, 0.48, 0.14], [side * 1.03, 0.16, -0.62], false)
+      }
+    }
+    if (kind === 'gunship') for (const side of [-1, 1]) {
+      box(this.model, paint, [1.3, 0.11, 0.63], [side * 1.21, -0.25, -0.36])
+      box(this.model, dark, [0.43, 0.36, 0.8], [side * 1.68, -0.48, -0.36])
+    }
     this.model.visible = false
   }
 
