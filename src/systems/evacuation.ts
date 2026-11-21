@@ -24,15 +24,15 @@ export class Evacuation {
   }
 
   call() {
-    if (this.flight !== 'ready' || this.saved === this.civilians.length) return
+    if (this.flight !== 'ready' || !this.civilians.some(civilian => civilian.available)) return
     this.setFlight('incoming')
     this.setEdge()
     this.helicopter.model.position.copy(this.edge)
     this.helicopter.model.visible = true
   }
 
-  update(dt: number, obstacles: readonly Box2[]) {
-    this.follow(dt, obstacles)
+  update(dt: number, obstacles: readonly Box2[], escorting = true) {
+    if (escorting) this.follow(dt, obstacles)
     if (this.flight !== 'ready') {
       this.elapsed += dt
       this.helicopter.spin(dt)
@@ -46,7 +46,7 @@ export class Evacuation {
           if (this.elapsed >= duration.hovering) {
             for (const civilian of this.civilians) {
               const { x, z } = civilian.model.position
-              if (!civilian.rescued && Math.hypot(x - helipad.x, z - helipad.z) <= helipad.radius) {
+              if (civilian.available && Math.hypot(x - helipad.x, z - helipad.z) <= helipad.radius) {
                 civilian.board()
                 this.saved++
               }
@@ -75,17 +75,23 @@ export class Evacuation {
       seconds: this.flight === 'ready' ? 0 : Math.ceil(Math.max(0, duration[this.flight] - this.elapsed)),
       saved: this.saved,
       total: this.civilians.length,
+      available: this.civilians.filter(civilian => civilian.available).length,
     }
   }
 
   private follow(dt: number, obstacles: readonly Box2[]) {
     this.nextFollow -= dt
     for (const [index, civilian] of this.civilians.entries()) {
-      if (civilian.rescued) continue
+      if (!civilian.available) continue
       const position = civilian.model.position
+      if (civilian.escort && !civilian.escort.visible) {
+        civilian.escort = undefined
+        civilian.move([])
+      }
       if (!civilian.escort) {
         let nearest = 3.2
         for (const soldier of this.squad) {
+          if (!soldier.visible) continue
           const distance = position.distanceTo(soldier.position)
           if (distance <= nearest) {
             civilian.escort = soldier

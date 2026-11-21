@@ -1,4 +1,4 @@
-import type { Box2, Object3D, Vector3 } from 'three'
+import { Vector2, type Box2, type Object3D, type Vector3 } from 'three'
 import { Barricade } from '../entities/barricade'
 import { helipad, roofs } from './navigation'
 
@@ -9,6 +9,23 @@ export class Construction {
 
   get obstacles(): Box2[] {
     return this.barricades.filter(barricade => barricade.standing).map(barricade => barricade.footprint)
+  }
+
+  providesCover(position: Vector3) {
+    const ground = new Vector2(position.x, position.z)
+    return this.barricades.some(barricade => barricade.standing && barricade.footprint.distanceToPoint(ground) <= 1.45)
+  }
+
+  damageArea(position: Vector3, radius: number, amount: number) {
+    const ground = new Vector2(position.x, position.z)
+    let destroyed = false
+    for (const barricade of this.barricades) {
+      if (barricade.standing && barricade.footprint.distanceToPoint(ground) <= radius) {
+        barricade.damage(amount)
+        if (!barricade.standing) destroyed = true
+      }
+    }
+    return destroyed
   }
 
   place(point: Vector3 | undefined, units: readonly Vector3[]) {
