@@ -1,4 +1,5 @@
-import { Group, Mesh, MeshStandardMaterial, SphereGeometry, Vector3, type Object3D } from 'three'
+import { Group, Mesh, MeshStandardMaterial, SphereGeometry, type Object3D } from 'three'
+import type { Travel } from '../systems/navigation'
 import { box } from './mesh'
 
 const vest = new MeshStandardMaterial({ color: 0xff812d, emissive: 0x3b1504 })
@@ -13,11 +14,11 @@ export class Civilian {
   rescued = false
   private health = 100
   private readonly legs = [new Group(), new Group()]
-  private waypoints: Vector3[] = []
+  private waypoints: Travel[] = []
   private stride = 0
 
-  constructor(x: number, z: number) {
-    this.model.position.set(x, 0, z)
+  constructor(x: number, z: number, y = 0) {
+    this.model.position.set(x, y, z)
     this.model.rotation.y = -0.7
     box(this.model, vest, [0.47, 0.48, 0.31], [0, 0.93, 0])
     box(this.model, reflective, [0.49, 0.075, 0.33], [0, 0.82, 0])
@@ -34,7 +35,7 @@ export class Civilian {
     }
   }
 
-  move(waypoints: Vector3[]) {
+  move(waypoints: Travel[]) {
     this.waypoints = waypoints
   }
 
@@ -59,11 +60,12 @@ export class Civilian {
     if (next) {
       const distance = position.distanceTo(next)
       if (distance > 0.001) this.model.rotation.y = Math.atan2(next.x - position.x, next.z - position.z)
-      if (distance <= 4.8 * dt) {
+      const step = (next.speed === 5 ? 4.5 : next.speed ?? 4.5) * dt
+      if (distance <= step) {
         position.copy(next)
         this.waypoints.shift()
       } else {
-        position.lerp(next, 4.8 * dt / distance)
+        position.lerp(next, step / distance)
       }
       this.stride += dt * 13
       swing = Math.sin(this.stride) * Math.min(0.43, distance * 2)

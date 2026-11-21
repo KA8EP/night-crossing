@@ -1,10 +1,10 @@
-import { CircleGeometry, Group, Mesh, MeshBasicMaterial, RingGeometry, SphereGeometry, Vector3 } from 'three'
+import { BoxGeometry, CircleGeometry, Group, Mesh, MeshBasicMaterial, RingGeometry, SphereGeometry, Vector3 } from 'three'
 
 export const fireRadius = 2.85
 export const burnDuration = 3.6
 const flightDuration = 1.24
 const orb = new SphereGeometry(0.46, 9, 6)
-const particle = new SphereGeometry(0.16, 5, 4)
+const particle = new BoxGeometry(0.23, 0.23, 0.23)
 const core = new MeshBasicMaterial({ color: 0xffdc73 })
 const flame = new MeshBasicMaterial({ color: 0xff4b19 })
 const ground = new CircleGeometry(fireRadius, 36)

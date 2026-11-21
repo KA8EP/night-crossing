@@ -1,27 +1,29 @@
-import { type Box2, type Camera, type Mesh, Raycaster, Vector2, Vector3 } from 'three'
+import { type Camera, type Mesh, Raycaster, Vector2, Vector3 } from 'three'
 import type { Soldier } from '../entities/soldier'
-import { formation, route } from './navigation'
+import type { Link } from '../entities/district'
+import type { Navigation } from './navigation'
 
 export function bindCommands(
   canvas: HTMLCanvasElement,
   camera: Camera,
   soldiers: Soldier[],
   surfaces: Mesh[],
+  blockers: Mesh[],
   box: HTMLElement,
-  onSelection: (count: number) => void,
+  onSelection: (selected: readonly Soldier[]) => void,
   onOrder: (point: Vector3) => void,
   building: () => boolean,
   onBuild: (point: Vector3 | undefined) => void,
-  obstacles: () => readonly Box2[],
+  navigation: Navigation,
   active: () => boolean,
 ) {
   const raycaster = new Raycaster()
   const cursor = new Vector2()
   const projected = new Vector3()
-  const orders = new Map<Soldier, { destination: Vector3; lane: number }>()
+  const orders = new Map<Soldier, { destination: Vector3 }>()
   let drag: { id: number; start: Vector2 } | undefined
   let selected: Soldier[] = []
-  onSelection(0)
+  onSelection([])
 
   function local(event: MouseEvent) {
     const bounds = canvas.getBoundingClientRect()
@@ -35,7 +37,14 @@ export function bindCommands(
 
   function ground(point: Vector2) {
     cast(point)
-    return raycaster.intersectObjects(surfaces, false)[0]?.point
+    const hit = raycaster.intersectObjects(surfaces, false)[0]
+    const wall = raycaster.intersectObjects(blockers, false)[0]
+    if (!hit || (wall && wall.distance < hit.distance - 0.025)) return
+    const link = hit.object.userData.link as Link | undefined
+    if (!link) return hit.point
+    const direction = link.to.clone().sub(link.from)
+    const progress = hit.point.clone().sub(link.from).dot(direction) / direction.lengthSq()
+    return link.from.clone().lerp(link.to, Math.max(0, Math.min(1, progress)))
   }
 
   canvas.addEventListener('pointerdown', event => {
@@ -67,7 +76,7 @@ export function bindCommands(
     }
     if (start.distanceTo(end) < 6) {
       cast(end)
-      const hitboxes = soldiers.filter(soldier => soldier.alive).map(soldier => soldier.hitbox)
+      const hitboxes = soldiers.filter(soldier => soldier.ready).map(soldier => soldier.hitbox)
       const hit = raycaster.intersectObjects(hitboxes, false)[0]
       selected = hit ? soldiers.filter(soldier => soldier.hitbox === hit.object) : []
     } else {
@@ -76,7 +85,7 @@ export function bindCommands(
       const minY = Math.min(start.y, end.y)
       const maxY = Math.max(start.y, end.y)
       selected = soldiers.filter(soldier => {
-        if (!soldier.alive) return false
+        if (!soldier.ready) return false
         projected.copy(soldier.model.position)
         projected.y += 0.9
         projected.project(camera)
@@ -86,7 +95,7 @@ export function bindCommands(
       })
     }
     soldiers.forEach(soldier => soldier.select(selected.includes(soldier)))
-    onSelection(selected.length)
+    onSelection(selected)
     clearDrag()
   })
 
@@ -102,15 +111,14 @@ export function bindCommands(
     event.preventDefault()
     const point = ground(local(event))
     if (!point) return
-    const destinations = formation(point, selected.length)
+    const destinations = navigation.formation(point, selected.length)
     if (!destinations.length) return
-    const blocked = obstacles()
+
     selected.forEach((soldier, index) => {
-      const lane = (index - (selected.length - 1) / 2) * 0.56
       const destination = destinations[index]
-      const path = route(soldier.model.position, destination, lane, blocked)
+      const path = navigation.route(soldier.model.position, destination)
       if (path.length) {
-        orders.set(soldier, { destination, lane })
+        orders.set(soldier, { destination })
         soldier.move(path)
       }
     })
@@ -118,18 +126,23 @@ export function bindCommands(
   })
 
   return {
+    select(soldier: Soldier) {
+      if (!active() || !soldier.ready) return
+      selected = [soldier]
+      soldiers.forEach(member => member.select(member === soldier))
+      onSelection(selected)
+    },
     removeFallen() {
-      const living = selected.filter(soldier => soldier.alive)
+      const living = selected.filter(soldier => soldier.ready)
       if (selected.length !== living.length) {
         selected = living
-        onSelection(selected.length)
+        onSelection(selected)
       }
     },
     replan() {
-      const blocked = obstacles()
-      for (const [soldier, { destination, lane }] of orders) {
-        if (soldier.alive && soldier.model.position.distanceToSquared(destination) > 0.01) {
-          soldier.move(route(soldier.model.position, destination, lane, blocked))
+      for (const [soldier, { destination }] of orders) {
+        if (soldier.ready && soldier.model.position.distanceToSquared(destination) > 0.01) {
+          soldier.move(navigation.route(soldier.model.position, destination))
         }
       }
     },
