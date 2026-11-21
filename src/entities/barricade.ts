@@ -51,7 +51,7 @@ export class Barricade {
     context.fillStyle = '#fff0d3'
     context.font = 'bold 17px sans-serif'
     context.textAlign = 'center'
-    context.fillText(this.health + ' / ' + Barricade.maxHealth, 64, 19)
+    context.fillText(Math.ceil(this.health) + ' / ' + Barricade.maxHealth, 64, 19)
     this.texture.needsUpdate = true
   }
 }

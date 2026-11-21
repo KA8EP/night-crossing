@@ -13,11 +13,11 @@ export function bindCommands(
   building: () => boolean,
   onBuild: (point: Vector3 | undefined) => void,
   obstacles: () => readonly Box2[],
+  active: () => boolean,
 ) {
   const raycaster = new Raycaster()
   const cursor = new Vector2()
   const projected = new Vector3()
-  const hitboxes = soldiers.map(soldier => soldier.hitbox)
   const orders = new Map<Soldier, { destination: Vector3; lane: number }>()
   let drag: { id: number; start: Vector2 } | undefined
   let selected: Soldier[] = []
@@ -39,7 +39,7 @@ export function bindCommands(
   }
 
   canvas.addEventListener('pointerdown', event => {
-    if (event.button !== 0 || drag) return
+    if (!active() || event.button !== 0 || drag) return
     drag = { id: event.pointerId, start: local(event) }
     canvas.setPointerCapture(event.pointerId)
   })
@@ -57,6 +57,7 @@ export function bindCommands(
 
   canvas.addEventListener('pointerup', event => {
     if (drag?.id !== event.pointerId || event.button !== 0) return
+    if (!active()) return clearDrag()
     const { start } = drag
     const end = local(event)
     if (building()) {
@@ -66,6 +67,7 @@ export function bindCommands(
     }
     if (start.distanceTo(end) < 6) {
       cast(end)
+      const hitboxes = soldiers.filter(soldier => soldier.alive).map(soldier => soldier.hitbox)
       const hit = raycaster.intersectObjects(hitboxes, false)[0]
       selected = hit ? soldiers.filter(soldier => soldier.hitbox === hit.object) : []
     } else {
@@ -74,6 +76,7 @@ export function bindCommands(
       const minY = Math.min(start.y, end.y)
       const maxY = Math.max(start.y, end.y)
       selected = soldiers.filter(soldier => {
+        if (!soldier.alive) return false
         projected.copy(soldier.model.position)
         projected.y += 0.9
         projected.project(camera)
@@ -95,7 +98,7 @@ export function bindCommands(
   canvas.addEventListener('lostpointercapture', clearDrag)
   canvas.addEventListener('contextmenu', event => event.preventDefault())
   canvas.addEventListener('pointerdown', event => {
-    if (event.button !== 2 || !selected.length) return
+    if (!active() || event.button !== 2 || !selected.length) return
     event.preventDefault()
     const point = ground(local(event))
     if (!point) return
@@ -115,10 +118,17 @@ export function bindCommands(
   })
 
   return {
+    removeFallen() {
+      const living = selected.filter(soldier => soldier.alive)
+      if (selected.length !== living.length) {
+        selected = living
+        onSelection(selected.length)
+      }
+    },
     replan() {
       const blocked = obstacles()
       for (const [soldier, { destination, lane }] of orders) {
-        if (soldier.model.position.distanceToSquared(destination) > 0.01) {
+        if (soldier.alive && soldier.model.position.distanceToSquared(destination) > 0.01) {
           soldier.move(route(soldier.model.position, destination, lane, blocked))
         }
       }

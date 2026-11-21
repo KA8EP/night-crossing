@@ -1,5 +1,6 @@
 import { Group, Mesh, MeshBasicMaterial, MeshStandardMaterial, RingGeometry, SphereGeometry, Vector3 } from 'three'
 import { box } from './mesh'
+import { HealthBar } from './health-bar'
 
 const blue = new MeshStandardMaterial({ color: 0x407bb7, roughness: 0.85 })
 const navy = new MeshStandardMaterial({ color: 0x182e4b })
@@ -10,13 +11,16 @@ const ringGeometry = new RingGeometry(0.46, 0.51, 32)
 const ringMaterial = new MeshBasicMaterial({ color: 0x70eeff })
 
 export class Soldier {
+  static readonly maxHealth = 100
   readonly model = new Group()
   readonly hitbox: Mesh
+  private readonly bar = new HealthBar(0.9, 2, 0x69d8f8)
   private readonly ring = new Mesh(ringGeometry, ringMaterial)
   private readonly legs = [new Group(), new Group()]
   private waypoints: Vector3[] = []
   private phase = 0
   private stride = 0
+  health = Soldier.maxHealth
 
   constructor(x: number, z: number) {
     this.model.position.set(x, 0, z)
@@ -50,6 +54,22 @@ export class Soldier {
     this.ring.visible = false
     this.model.add(this.ring)
     this.hitbox = box(this.model, new MeshBasicMaterial({ visible: false }), [0.9, 1.79, 0.92], [0, 0.89, 0.08], false)
+    this.bar.model.visible = false
+    this.model.add(this.bar.model)
+  }
+
+  get alive() {
+    return this.health > 0
+  }
+
+  damage(amount: number) {
+    this.health = Math.max(0, this.health - amount)
+    this.bar.model.visible = true
+    this.bar.update(this.health / Soldier.maxHealth)
+    if (!this.alive) {
+      this.model.visible = false
+      this.waypoints = []
+    }
   }
 
   select(selected: boolean) {
@@ -60,7 +80,14 @@ export class Soldier {
     this.waypoints = waypoints
   }
 
+  aimAt(target: Vector3) {
+    if (!this.waypoints.length) {
+      this.model.rotation.y = Math.atan2(target.x - this.model.position.x, target.z - this.model.position.z)
+    }
+  }
+
   update(dt: number) {
+    if (!this.alive) return
     let remaining = 4.5 * dt
     let traveled = 0
     const position = this.model.position

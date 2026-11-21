@@ -11,6 +11,7 @@ export class Civilian {
   readonly model = new Group()
   escort?: Object3D
   rescued = false
+  private health = 100
   private readonly legs = [new Group(), new Group()]
   private waypoints: Vector3[] = []
   private stride = 0
@@ -35,6 +36,20 @@ export class Civilian {
 
   move(waypoints: Vector3[]) {
     this.waypoints = waypoints
+  }
+
+  get available() {
+    return !this.rescued && this.health > 0
+  }
+
+  damage(amount: number) {
+    if (!this.available) return
+    this.health = Math.max(0, this.health - amount)
+    if (!this.available) {
+      this.model.visible = false
+      this.escort = undefined
+      this.waypoints = []
+    }
   }
 
   update(dt: number) {

@@ -4,10 +4,12 @@ import {
 } from 'three'
 import { createCity } from './entities/city'
 import { Soldier } from './entities/soldier'
+import { Pyrokinetic } from './entities/pyrokinetic'
 import { TacticalCamera } from './systems/camera'
 import { bindCommands } from './systems/commands'
 import { Construction } from './systems/construction'
 import { Evacuation } from './systems/evacuation'
+import { Combat, type Outcome } from './systems/combat'
 import { createHud } from './ui/hud'
 import './ui/style.css'
 
@@ -53,6 +55,8 @@ const soldiers = [
 scene.add(...soldiers.map(soldier => soldier.model))
 const construction = new Construction(scene)
 const evacuation = new Evacuation(scene, camera.camera, soldiers.map(soldier => soldier.model))
+const combat = new Combat(scene, soldiers, evacuation.civilians, construction)
+let outcome: Outcome | undefined
 let building = false
 let buildMessageTime = 0
 
@@ -63,9 +67,11 @@ function setBuilding(active: boolean, message = '') {
 }
 
 hud.build.addEventListener('click', () => {
+  if (outcome) return
   setBuilding(!building, building ? '' : 'ЛКМ по крыше — поставить баррикаду · Esc — отменить')
 })
 hud.call.addEventListener('click', () => {
+  if (outcome) return
   evacuation.call()
   hud.evacuation(evacuation.status)
 })
@@ -86,8 +92,9 @@ const commands = bindCommands(renderer.domElement, camera.camera, soldiers, city
   markerTime = 0.85
 }, () => building, point => {
   const units = [
-    ...soldiers.map(soldier => soldier.model.position),
-    ...evacuation.civilians.filter(civilian => !civilian.rescued).map(civilian => civilian.model.position),
+    ...soldiers.filter(soldier => soldier.alive).map(soldier => soldier.model.position),
+    ...evacuation.civilians.filter(civilian => civilian.available).map(civilian => civilian.model.position),
+    combat.boss.model.position,
   ]
   const error = construction.place(point, units)
   if (error) {
@@ -96,16 +103,31 @@ const commands = bindCommands(renderer.domElement, camera.camera, soldiers, city
   }
   commands.replan()
   setBuilding(false, 'Баррикада установлена · Прочность 100 / 100')
-}, () => construction.obstacles)
+}, () => construction.obstacles, () => !outcome)
 
 let previousTime = performance.now()
 renderer.setAnimationLoop(time => {
   const dt = Math.max(0, Math.min((time - previousTime) / 1000, 0.05))
   previousTime = time
   camera.update(dt)
-  soldiers.forEach(soldier => soldier.update(dt))
-  evacuation.update(dt, construction.obstacles)
-  hud.evacuation(evacuation.status)
+  if (!outcome) {
+    soldiers.forEach(soldier => soldier.update(dt))
+    if (combat.update(dt)) commands.replan()
+    commands.removeFallen()
+    evacuation.update(dt, construction.obstacles)
+    const status = evacuation.status
+    hud.evacuation(status)
+    hud.combat(combat.boss.health / Pyrokinetic.maxHealth * 100, soldiers.filter(soldier => soldier.alive).length, soldiers.length)
+    outcome = combat.outcome(status.saved, status.total)
+    if (outcome) {
+      combat.clearEffects()
+      setBuilding(false)
+      hud.finish(outcome, status.saved)
+    }
+  } else if (outcome === 'evacuation') {
+    evacuation.update(dt, [], false)
+    hud.evacuation(evacuation.status)
+  }
   if (buildMessageTime > 0) {
     buildMessageTime -= dt
     if (buildMessageTime <= 0) hud.construction(false)
