@@ -61,6 +61,47 @@ canvas { display: block; width: 100%; height: 100%; cursor: crosshair; touch-act
   font-weight: 600;
 }
 .mission.complete { border-color: #85efd0; }
+.boss-status {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  display: grid;
+  gap: 4px;
+  width: min(145px, calc(100% - 28px));
+  padding: 8px 10px;
+  color: #ffd0db;
+  background: #231425ed;
+  border: 1px solid #79405b;
+  border-radius: 3px;
+  pointer-events: none;
+  font-size: 12px;
+  font-weight: 650;
+}
+.boss-status meter { width: 100%; height: 9px; accent-color: #fb648b; }
+.boss-status meter::-webkit-meter-bar { background: #38263d; border: 0; }
+.boss-status meter::-webkit-meter-optimum-value { background: #fb648b; }
+.result {
+  width: min(390px, calc(100% - 32px));
+  padding: 26px 28px;
+  color: #e2eef4;
+  background: #111d29;
+  border: 1px solid #528681;
+  border-radius: 5px;
+}
+.result.defeat { border-color: #a6536c; }
+.result::backdrop { background: #071019b5; }
+.result h2 { margin: 0; font-size: 31px; }
+.result p { margin: 10px 0 20px; color: #b5cbd8; line-height: 1.5; }
+.result button {
+  font: inherit;
+  font-weight: 650;
+  color: #e2eef4;
+  background: #243c4a;
+  border: 1px solid #638997;
+  padding: 7px 12px;
+  border-radius: 3px;
+  cursor: pointer;
+}
 .bottom { padding: 10px 0 0; }
 .actions { gap: 7px 12px; flex-wrap: wrap; font-size: 12px; color: #a5bcc9; }
 .actions button {
